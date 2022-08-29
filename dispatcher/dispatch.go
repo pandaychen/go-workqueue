@@ -2,12 +2,16 @@ package dispatcher
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pandaychen/go-workerqueue/broker"
+	"github.com/pandaychen/go-workerqueue/broker/common"
 	"github.com/pandaychen/go-workerqueue/handler"
 	"github.com/pandaychen/go-workerqueue/task"
+
+	"github.com/pandaychen/goes-wrapper/pyerrors"
 )
 
 // 核心结构定义
@@ -46,4 +50,54 @@ func NewDispatcher() *Dispatcher {
 	//opt
 
 	return dis
+}
+
+// HandlerBindTopic：handler注入，绑定到topic
+func (d *Dispatcher) HandlerBindTopic(bindParams *task.HandlerBindParams) error {
+	var (
+		err error
+	)
+	d.handlersStoreLock.Lock()
+	defer d.handlersStoreLock.Unlock()
+
+	if err = bindParams.Validator(); err != nil {
+		//log
+		return err
+	}
+
+	if _, exists := d.handlersStore[bindParams.Topic]; exists {
+		return nil
+	}
+
+	//构造poolHandler
+	handler := &handler.PoolHandler{
+		Topic:       bindParams.Topic,
+		FuncCaller:  bindParams.FuncCall,
+		Concurrency: bindParams.Concurrency,
+	}
+
+	d.handlersStore[bindParams.Topic] = handler
+
+	return nil
+}
+
+/* 注册broker
+1. queueType：broker类型
+2. args：broker配置
+*/
+func (d *Dispatcher) RegisteBrokerDriver(queueType string, args ...interface{}) error {
+	if d.taskBroker != nil {
+		return pyerrors.ErrWorkQueDriverExists
+	}
+	queueType = strings.ToLower(queueType)
+	switch queueType {
+	case common.QUEUE_TYPE_LOCAL:
+		return pyerrors.ErrWorkQueBadDriver
+	case common.QUEUE_TYPE_REDIS:
+		return false, pyerrors.ErrWorkQueBadDriverConfig
+	default:
+		return pyerrors.ErrWorkQueBadDriver
+	}
+
+	return nil
 }

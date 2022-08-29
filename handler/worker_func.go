@@ -13,7 +13,12 @@ func (h HandlerFunc) Run(task task.TaskElement) task.TaskRunResult {
 
 //注册参数
 type HandlerBindParams struct {
-	funcCall    HandlerFunc
-	topic       string
-	concurrency int
+	FuncCall    HandlerFunc
+	Topic       string `json:"topic" validate:"required"`
+	Concurrency int    `json:"concurrency" validate:"required"`
+}
+
+// 校验参数合法性
+func (p *HandlerBindParams) Validator() error {
+	return g_validator.Struct(p)
 }
