@@ -10,6 +10,9 @@ import (
 	"github.com/pandaychen/go-workerqueue/broker/common"
 	"github.com/pandaychen/go-workerqueue/handler"
 	"github.com/pandaychen/go-workerqueue/task"
+	"go.uber.org/zap"
+
+	"github.com/pandaychen/goes-wrapper/zaplog"
 
 	"github.com/pandaychen/goes-wrapper/pyerrors"
 )
@@ -18,21 +21,24 @@ import (
 type Dispatcher struct {
 	ApiService gin.Engine //提供对外操作API
 
-	waitGroup sync.WaitGroup
+	swgp sync.WaitGroup
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 
-	//broker
+	//broker 通用结构
 	taskBroker broker.Broker
 	brokerType string
 
-	// 注册信息：topic-handler映射
+	// 注册信息：key=topic/value=handler处理方法
 	handlersStore     map[string]*handler.PoolHandler
 	handlersStoreLock sync.RWMutex
 
+	// key=topic/value=async task channel
 	tasksChan map[string]chan task.TaskElement
 	tasksLock sync.RWMutex
+
+	logger *zap.Logger
 }
 
 func NewDispatcher() *Dispatcher {
@@ -44,8 +50,10 @@ func NewDispatcher() *Dispatcher {
 		tasksChan:         make(map[string]chan task.TaskElement),
 		handlersStoreLock: sync.RWMutex{},
 		tasksLock:         sync.RWMutex{},
-		waitGroup:         sync.WaitGroup{},
+		swgp:              sync.WaitGroup{},
 	}
+
+	dis.logger = zaplog.ZapLoggerInit("go-workerqueue", "./queue.log")
 
 	//opt
 
@@ -61,11 +69,12 @@ func (d *Dispatcher) HandlerBindTopic(bindParams *task.HandlerBindParams) error 
 	defer d.handlersStoreLock.Unlock()
 
 	if err = bindParams.Validator(); err != nil {
-		//log
+		d.logger.Error("bindParams.Validator error", zap.Any("errmsg", err))
 		return err
 	}
 
 	if _, exists := d.handlersStore[bindParams.Topic]; exists {
+		d.logger.Error("not found topic", zap.String(bindParams.Topic))
 		return nil
 	}
 
