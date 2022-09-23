@@ -2,6 +2,9 @@ package broker
 
 import (
 	"context"
+	"strings"
+
+	"go-workqueue/broker/common"
 )
 
 // 任务队列通用定义（默认采用json进行序列化）
@@ -23,4 +26,11 @@ type Broker interface {
 
 	//返回长度
 	Len(ctx context.Context, key string) int
+}
+
+func NewBroker(broker_type string) Broker {
+	switch strings.ToLower(broker_type) {
+	case common.QUEUE_TYPE_REDIS:
+
+	}
 }

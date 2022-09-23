@@ -8,7 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/pandaychen/go-workerqueue/broker"
 	"github.com/pandaychen/go-workerqueue/broker/common"
+	channellimit "github.com/pandaychen/go-workerqueue/concurrency/channel"
 	"github.com/pandaychen/go-workerqueue/handler"
+	"github.com/pandaychen/go-workerqueue/metrics"
 	"github.com/pandaychen/go-workerqueue/task"
 	"go.uber.org/zap"
 
@@ -34,11 +36,16 @@ type Dispatcher struct {
 	handlersStore     map[string]*handler.PoolHandler
 	handlersStoreLock sync.RWMutex
 
+	//生产者限速
+	producersLimiter     map[string]channellimit.ConcurrencyChanLimiter
+	producersLimiterLock sync.Mutex
+
 	// key=topic/value=async task channel
 	tasksChan map[string]chan task.TaskElement
 	tasksLock sync.RWMutex
 
-	logger *zap.Logger
+	logger     *zap.Logger
+	metricsCli *metrics.Metrics
 }
 
 func NewDispatcher() *Dispatcher {
@@ -58,6 +65,36 @@ func NewDispatcher() *Dispatcher {
 	//opt
 
 	return dis
+}
+
+// initTopicHandlers：初始化任务生产者及限速桶
+func (d *Dispatcher) initTopicHandlersProducer(ctx context.Context) {
+	d.handlersStoreLock.Lock()
+	defer d.handlersStoreLock.Unlock()
+	for topicName, handler := range d.handlersStore {
+		d.producersLimiterLock.Lock()
+		d.producersLimiter[topicName] = channellimit.NewConcurrencyChanLimiter(handler.Concurrency)
+		d.producersLimiterLock.Unlock()
+
+		d.tasksLock.Lock()
+		d.tasksChan[topicName] = make(chan task.TaskElement, 0)
+		d.tasksLock.Unlock()
+	}
+}
+
+// fetcherTasks：通过令牌桶限制获取任务，并下发到异步handler channel
+func (d *Dispatcher) fetcherTasks(ctx context.Context, topic_name string) error {
+	var (
+		err      error
+		taskinfo task.TaskElement
+	)
+
+	//get tasks from broker dequeue...
+	if taskinfo, err = d.taskBroker.Dequeue(ctx, topic_name); err != nil {
+		//
+		return err
+	}
+
 }
 
 // HandlerBindTopic：handler注入，绑定到topic
